@@ -487,17 +487,6 @@ http://127.0.0.1:8000/docs
 
 ---
 
-# Future Enhancements
-
-- Add JWT authentication
-- Add pagination for tasks
-- Add filtering and sorting
-- Add unit and integration tests
-- Add Docker support for FastAPI app
-- Add CI/CD pipeline
-
----
-
 # Changelog
 
 | Date | Author | Change |

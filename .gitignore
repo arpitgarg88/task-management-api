@@ -9,9 +9,6 @@ __pycache__/
 alembic/__pycache__/
 alembic/versions/__pycache__/
 
-# Environment variables
-.env
-
 # VS Code
 .vscode/
 
@@ -24,6 +21,3 @@ Thumbs.db
 
 # Logs
 *.log
-
-# Environment variables
-.env

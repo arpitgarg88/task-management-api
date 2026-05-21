@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
-from app.schemas.enums import TaskStatus
+from app.db.models import TaskStatus
 
 
 class TaskCreateRequest(BaseModel):

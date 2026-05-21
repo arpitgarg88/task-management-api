@@ -66,6 +66,22 @@ The API uses:
 
 ---
 
+---
+
+# Environment Configuration
+
+The project uses environment variables for configuration management.
+
+## Step 1: Create `.env` file
+
+Copy the example file:
+
+```bash
+cp .env.example .env
+```
+
+---
+
 # Architecture
 
 ## System Flow Diagram

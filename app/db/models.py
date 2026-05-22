@@ -38,7 +38,7 @@ class Task(Base):
     description = Column(Text)
     status = Column(SAEnum(TaskStatus), default=TaskStatus.TODO)
 
-    assigned_to = Column(Integer, ForeignKey("tm_users.id", ondelete="SET NULL"))
+    assigned_to = Column(Integer,ForeignKey("tm_users.id", ondelete="SET NULL"),nullable=True,index=True)
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

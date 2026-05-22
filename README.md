@@ -1,84 +1,109 @@
+````markdown
 ---
-title: Task Management API
+title: Production-Ready Task Management API
 author: Arpit Garg
 created: 2026-05-21
+updated: 2026-05-22
 status: Active
 ticket: INTERN-TASK-MANAGEMENT
 pr: N/A
-tags: fastapi, postgresql, sqlalchemy, alembic, async-api
+tags: fastapi, postgresql, sqlalchemy, alembic, redis, caching, async-api, state-machine
 ---
 
-# Task Management API
+# Production-Ready Task Management API
 
-## TL;DR
+## TL;DR (30 seconds read)
 
-Task Management API is a CRUD-based backend service built using FastAPI, PostgreSQL, SQLAlchemy ORM, and Alembic migrations.
+Production-ready Task Management API built using FastAPI, PostgreSQL, SQLAlchemy Async ORM, Redis caching, and layered architecture principles.
 
-The system supports task creation, retrieval, updating, and deletion with proper layered architecture using:
-- Route Layer
-- Service Layer
-- Repository Layer
-- Database Layer
-
----
-
-# Overview
-
-## Problem Statement
-
-The system provides a simple backend API for managing tasks in a structured and scalable manner.
-
-The goal was to implement:
-- Clean architecture
+The system supports:
+- CRUD task operations
+- Redis caching with fallback handling
+- Task status state machine validation
+- Structured service/repository architecture
 - Async database support
-- PostgreSQL integration
-- Dockerized database
+- Dockerized infrastructure
 - Alembic migrations
-- Production-style project structure
+
+The API is designed with scalability, maintainability, and production-style backend practices.
 
 ---
 
-## Solution Summary
+## Overview
 
-The API uses:
-- FastAPI for HTTP APIs
-- SQLAlchemy Async ORM for database access
-- PostgreSQL as the database
-- Alembic for database migrations
-- Repository pattern for DB abstraction
-- Service layer for business logic separation
+### Problem Statement
 
+The initial task management system required:
+- Structured layered architecture
+- Database abstraction
+- Efficient task retrieval
+- Controlled task lifecycle management
+- Production-grade caching
+- Reliable async database integration
+
+Without caching and transition validation:
+- Repeated DB reads increased latency
+- Invalid task status transitions could corrupt workflow logic
+- APIs lacked production resiliency
 
 ---
 
-# Prerequisites & Dependencies
+### Solution Summary
 
-## System Dependencies
+The solution introduces:
+- Redis caching for task retrieval APIs
+- Cache invalidation on task mutations
+- Status state machine enforcement
+- PostgreSQL async integration
+- Repository + service-layer abstraction
+- Graceful Redis fallback handling
+
+---
+
+### Key Metrics/Impact
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Task Fetch Source | PostgreSQL only | Redis + PostgreSQL fallback |
+| Status Validation | None | Strict state machine |
+| Cache Response Time | N/A | Near in-memory latency |
+| Invalid Status Prevention | No | Yes |
+| Fault Tolerance | Limited | Redis failure fallback supported |
+
+---
+
+## Prerequisites & Dependencies
+
+### Required Knowledge
+
+- [ ] FastAPI async APIs
+- [ ] SQLAlchemy Async ORM
+- [ ] PostgreSQL basics
+- [ ] Redis caching fundamentals
+- [ ] Alembic migrations
+- [ ] Layered backend architecture
+
+---
+
+### System Dependencies
 
 | Dependency | Purpose | Required Version |
 |------------|---------|------------------|
 | Python | Backend runtime | ≥3.13 |
 | PostgreSQL | Primary database | ≥16 |
-| Docker | Containerized DB | Latest |
+| Redis | Caching layer | ≥7 |
+| Docker | Containerized infrastructure | Latest |
 | FastAPI | API framework | ≥0.136 |
 | SQLAlchemy | ORM | ≥2.0 |
-| Alembic | Migration system | ≥1.18 |
+| Alembic | Migration management | ≥1.18 |
 
 ---
 
----
+### Related Documentation
 
-# Environment Configuration
-
-The project uses environment variables for configuration management.
-
-## Step 1: Create `.env` file
-
-Copy the example file:
-
-```bash
-cp .env.example .env
-```
+- `README.md`
+- `alembic/`
+- `docker-compose.yml`
 
 ---
 
@@ -93,12 +118,14 @@ FastAPI Route Layer
       ↓
 Service Layer
       ↓
+Redis Cache Check
+      ↓
 Repository Layer
       ↓
 SQLAlchemy ORM
       ↓
 PostgreSQL Database
-```
+````
 
 ---
 
@@ -111,10 +138,34 @@ A[Client / Swagger UI]
 
 A --> B[Routes Layer]
 B --> C[Service Layer]
-C --> D[Repository Layer]
-D --> E[SQLAlchemy ORM]
-E --> F[(PostgreSQL)]
+C --> D[Redis Cache]
+D --> E[Repository Layer]
+E --> F[SQLAlchemy ORM]
+F --> G[(PostgreSQL)]
 ```
+
+---
+
+## Data Flow
+
+### Task Retrieval
+
+1. API request hits FastAPI route
+2. Service checks Redis cache
+3. On cache hit → return cached response
+4. On cache miss → fetch from PostgreSQL
+5. Response stored in Redis with TTL
+6. Return response to client
+
+---
+
+### Task Update
+
+1. Request validated
+2. State machine validates status transition
+3. Repository updates database
+4. Related cache keys invalidated
+5. Updated response returned
 
 ---
 
@@ -130,10 +181,12 @@ task-management/
 ├── alembic/
 ├── app/
 │   ├── api/
+│   ├── core/
 │   ├── db/
 │   ├── repositories/
 │   ├── schemas/
 │   ├── services/
+│   ├── cache/
 │   └── main.py
 │
 ├── docker-compose.yml
@@ -144,19 +197,15 @@ task-management/
 
 ---
 
-# API Endpoints
+## API Endpoints
 
 ---
 
-## POST `/tasks`
+### `POST /tasks`
 
-### Purpose
+**Purpose:** Create a new task
 
-Create a new task.
-
-### Authentication
-
-None
+**Authentication:** None
 
 ---
 
@@ -164,10 +213,10 @@ None
 
 ```json
 {
-  "title": "Build Task API",
-  "description": "Implement CRUD endpoints",
+  "title": "Build Redis Cache",
+  "description": "Implement caching layer",
   "assigned_to": 1,
-  "status": "todo"
+  "status": "pending"
 }
 ```
 
@@ -178,12 +227,12 @@ None
 ```json
 {
   "id": 1,
-  "title": "Build Task API",
-  "description": "Implement CRUD endpoints",
-  "status": "todo",
+  "title": "Build Redis Cache",
+  "description": "Implement caching layer",
+  "status": "pending",
   "assigned_to": 1,
-  "created_at": "2026-05-21T06:17:20.055691",
-  "updated_at": "2026-05-21T06:17:20.055691"
+  "created_at": "2026-05-22T10:15:20.055691",
+  "updated_at": "2026-05-22T10:15:20.055691"
 }
 ```
 
@@ -191,166 +240,175 @@ None
 
 ### Error Codes
 
-| Code | Meaning |
-|------|---------|
-| 422 | Validation error |
-| 500 | Internal server error |
+| Code | Meaning               | Resolution                  |
+| ---- | --------------------- | --------------------------- |
+| 422  | Validation error      | Validate request body       |
+| 500  | Internal server error | Check server logs           |
+| 400  | Invalid assignment    | Ensure assigned user exists |
 
 ---
 
-# GET `/tasks`
+## `GET /tasks`
 
-## Purpose
+### Purpose
 
 Fetch all tasks.
 
-## Authentication
+### Authentication
 
 None
 
 ---
 
-## Response
+### Cache
+
+| Cache Key              | TTL         |
+| ---------------------- | ----------- |
+| `tasks:user:{user_id}` | 300 seconds |
+
+---
+
+### Response
 
 ```json
 [
   {
     "id": 1,
-    "title": "Build Task API",
-    "description": "Implement CRUD endpoints",
-    "status": "todo",
-    "assigned_to": 1,
-    "created_at": "2026-05-21T06:17:20.055691",
-    "updated_at": "2026-05-21T06:17:20.055691"
+    "title": "Build Redis Cache",
+    "description": "Implement caching layer",
+    "status": "pending",
+    "assigned_to": 1
   }
 ]
 ```
 
 ---
 
-## Error Codes
-
-| Code | Meaning |
-|------|---------|
-| 500 | Internal server error |
-
----
-
-# GET `/tasks/{task_id}`
-
-## Purpose
-
-Fetch a single task by ID.
-
-## Authentication
-
-None
-
----
-
-## Example Request
+### Logging
 
 ```text
-GET /tasks/1
+[CACHE HIT] tasks:user:1
+[CACHE MISS] tasks:user:1
 ```
 
 ---
 
-## Response
+## `GET /tasks/{task_id}`
+
+### Purpose
+
+Fetch task by ID.
+
+---
+
+### Cache
+
+| Cache Key        | TTL         |
+| ---------------- | ----------- |
+| `task:{task_id}` | 300 seconds |
+
+---
+
+### Response
 
 ```json
 {
   "id": 1,
-  "title": "Build Task API",
-  "description": "Implement CRUD endpoints",
-  "status": "todo",
-  "assigned_to": 1,
-  "created_at": "2026-05-21T06:17:20.055691",
-  "updated_at": "2026-05-21T06:17:20.055691"
+  "title": "Build Redis Cache",
+  "description": "Implement caching layer",
+  "status": "pending",
+  "assigned_to": 1
 }
 ```
 
 ---
 
-## Error Codes
-
-| Code | Meaning |
-|------|---------|
-| 404 | Task not found |
-| 500 | Internal server error |
-
----
-
-# PUT `/tasks/{task_id}`
-
-## Purpose
-
-Update an existing task.
-
-## Authentication
-
-None
-
----
-
-## Request
-
-```json
-{
-  "title": "Build Production API",
-  "status": "done"
-}
-```
-
----
-
-## Response
-
-```json
-{
-  "id": 1,
-  "title": "Build Production API",
-  "description": "Implement CRUD endpoints",
-  "status": "done",
-  "assigned_to": 1,
-  "created_at": "2026-05-21T06:17:20.055691",
-  "updated_at": "2026-05-21T06:21:53.765000"
-}
-```
-
----
-
-## Error Codes
-
-| Code | Meaning |
-|------|---------|
-| 400 | No update fields provided |
-| 404 | Task not found |
-| 422 | Validation error |
-
----
-
-# DELETE `/tasks/{task_id}`
-
-## Purpose
-
-Delete a task.
-
-## Authentication
-
-None
-
----
-
-## Example Request
+### Logging
 
 ```text
-DELETE /tasks/1
+[CACHE HIT] task:1
+[CACHE MISS] task:1
 ```
 
 ---
 
-## Response
+## `PUT /tasks/{task_id}`
+
+### Purpose
+
+Update task details and status.
+
+---
+
+### Status State Machine
+
+| Current Status | Allowed Transitions    |
+| -------------- | ---------------------- |
+| pending        | in_progress, cancelled |
+| in_progress    | completed, cancelled   |
+| completed      | Not allowed            |
+| cancelled      | Not allowed            |
+
+---
+
+### Valid Example
+
+```json
+{
+  "status": "in_progress"
+}
+```
+
+---
+
+### Invalid Example
+
+```json
+{
+  "status": "pending"
+}
+```
+
+From:
+
+```text
+completed → pending
+```
+
+---
+
+### Invalid Transition Response
+
+```json
+{
+  "detail": "Invalid status transition from completed to pending"
+}
+```
+
+---
+
+### Logging
+
+```text
+[STATUS CHANGE]
+task_id=1
+user_id=1
+old_status=pending
+new_status=in_progress
+timestamp=2026-05-22T10:20:00Z
+```
+
+---
+
+## `DELETE /tasks/{task_id}`
+
+### Purpose
+
+Delete task by ID.
+
+---
+
+### Response
 
 ```text
 204 No Content
@@ -358,12 +416,51 @@ DELETE /tasks/1
 
 ---
 
-## Error Codes
+### Cache Handling
 
-| Code | Meaning |
-|------|---------|
-| 404 | Task not found |
-| 500 | Internal server error |
+On delete:
+
+* `task:{task_id}` invalidated
+* `tasks:user:{user_id}` invalidated
+
+---
+
+# Redis Caching
+
+## Cache Strategy
+
+| Operation          | Cache Key              | TTL  |
+| ------------------ | ---------------------- | ---- |
+| Get Task By ID     | `task:{task_id}`       | 300s |
+| List Tasks By User | `tasks:user:{user_id}` | 300s |
+
+---
+
+## Cache Invalidation
+
+Performed on:
+
+* Task creation
+* Task update
+* Task deletion
+
+---
+
+## Redis Failure Handling
+
+If Redis is unavailable:
+
+* API falls back to PostgreSQL
+* Request must still succeed
+* Warning logs generated
+
+---
+
+## Example Log
+
+```text
+[REDIS ERROR] Falling back to DB
+```
 
 ---
 
@@ -371,46 +468,48 @@ DELETE /tasks/1
 
 ## Table: `tm_users`
 
-| Column | Type |
-|--------|------|
-| id | Integer |
-| username | String |
-| email | String |
-| role | Enum |
+| Column   | Type    |
+| -------- | ------- |
+| id       | Integer |
+| username | String  |
+| email    | String  |
+| role     | Enum    |
 
 ---
 
 ## Table: `tm_tasks`
 
-| Column | Type |
-|--------|------|
-| id | Integer |
-| title | String |
-| description | Text |
-| status | Enum |
-| assigned_to | Integer |
-| created_at | DateTime |
-| updated_at | DateTime |
+| Column      | Type     |
+| ----------- | -------- |
+| id          | Integer  |
+| title       | String   |
+| description | Text     |
+| status      | Enum     |
+| assigned_to | Integer  |
+| created_at  | DateTime |
+| updated_at  | DateTime |
 
 ---
 
 # Alembic Migration System
 
-## Migration Commands
-
-### Generate Migration
+## Generate Migration
 
 ```bash
 alembic revision --autogenerate -m "message"
 ```
 
-### Apply Migration
+---
+
+## Apply Migration
 
 ```bash
 alembic upgrade head
 ```
 
-### Rollback Migration
+---
+
+## Rollback Migration
 
 ```bash
 alembic downgrade -1
@@ -420,7 +519,7 @@ alembic downgrade -1
 
 # Docker Setup
 
-## Start PostgreSQL
+## Start Infrastructure
 
 ```bash
 docker compose up -d
@@ -428,17 +527,25 @@ docker compose up -d
 
 ---
 
-## Stop PostgreSQL
+## Verify Containers
 
 ```bash
-docker compose down
+docker ps
 ```
 
 ---
 
-# Manual Testing
+# Running the Application
 
-## Open Swagger UI
+## Start FastAPI Server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+---
+
+## Swagger UI
 
 ```text
 http://127.0.0.1:8000/docs
@@ -446,25 +553,102 @@ http://127.0.0.1:8000/docs
 
 ---
 
-## Testing Steps
+# Testing
+
+## How to Test Manually
+
+### Create User
+
+Insert user into PostgreSQL before assigning tasks.
+
+```sql
+INSERT INTO tm_users (username, email, role)
+VALUES ('alice', 'alice@gmail.com', 'user');
+```
+
+---
 
 ### Create Task
-- Open POST `/tasks`
-- Add request body
-- Execute request
 
-### Get Tasks
-- Open GET `/tasks`
-- Execute request
+1. Open Swagger UI
+2. Execute `POST /tasks`
+3. Use valid `assigned_to`
 
-### Update Task
-- Open PUT `/tasks/{task_id}`
-- Modify fields
-- Execute request
+---
 
-### Delete Task
-- Open DELETE `/tasks/{task_id}`
-- Execute request
+### Test Cache
+
+1. Call `GET /tasks/1`
+2. Observe:
+
+```text
+[CACHE MISS]
+```
+
+3. Call again
+4. Observe:
+
+```text
+[CACHE HIT]
+```
+
+---
+
+### Test State Machine
+
+#### Valid Transition
+
+```text
+pending → in_progress
+```
+
+#### Invalid Transition
+
+```text
+completed → pending
+```
+
+Expected:
+
+```json
+{
+  "detail": "Invalid status transition"
+}
+```
+
+---
+
+## Edge Cases
+
+| Edge Case                 | Handling               |
+| ------------------------- | ---------------------- |
+| Redis unavailable         | Fallback to PostgreSQL |
+| Invalid status transition | HTTP 400               |
+| Missing assigned user     | Foreign key validation |
+| Non-existent task         | HTTP 404               |
+
+---
+
+# Error Handling & Observability
+
+## Logging
+
+| Log Pattern       | Meaning           | Action                |
+| ----------------- | ----------------- | --------------------- |
+| `[CACHE HIT]`     | Redis hit         | Normal                |
+| `[CACHE MISS]`    | Redis miss        | Normal                |
+| `[REDIS ERROR]`   | Redis unavailable | Check Redis container |
+| `[STATUS CHANGE]` | Status updated    | Audit tracking        |
+
+---
+
+## Common Errors & Troubleshooting
+
+| Error                       | Cause                   | Resolution                  |
+| --------------------------- | ----------------------- | --------------------------- |
+| `ForeignKeyViolationError`  | User does not exist     | Insert user into `tm_users` |
+| `Connection refused`        | PostgreSQL/Redis down   | Start Docker containers     |
+| `Invalid status transition` | State machine violation | Use allowed transition      |
 
 ---
 
@@ -472,17 +656,18 @@ http://127.0.0.1:8000/docs
 
 ## Backend
 
-| File | Purpose |
-|------|---------|
-| `app/main.py` | FastAPI application entrypoint |
-| `app/api/routes.py` | API route definitions |
-| `app/services/service.py` | Business logic |
-| `app/repositories/repository.py` | Database access layer |
-| `app/db/models.py` | SQLAlchemy ORM models |
-| `app/db/database.py` | Database session configuration |
-| `app/schemas/schemas.py` | Pydantic request/response schemas |
-| `alembic/env.py` | Alembic migration environment |
-| `docker-compose.yml` | PostgreSQL container setup |
+| File                             | Purpose                         |
+| -------------------------------- | ------------------------------- |
+| `app/main.py`                    | FastAPI application entrypoint  |
+| `app/api/routes.py`              | API route definitions           |
+| `app/services/service.py`        | Business logic + state machine  |
+| `app/repositories/repository.py` | Database abstraction            |
+| `app/db/models.py`               | SQLAlchemy ORM models           |
+| `app/db/database.py`             | Async DB session setup          |
+| `app/cache/cache.py`             | Redis cache handling            |
+| `app/schemas/schemas.py`         | Pydantic schemas                |
+| `alembic/env.py`                 | Alembic migration configuration |
+| `docker-compose.yml`             | PostgreSQL + Redis containers   |
 
 ---
 
@@ -490,21 +675,44 @@ http://127.0.0.1:8000/docs
 
 ## Do's
 
-- Keep business logic inside the service layer
-- Keep database logic inside the repository layer
-- Use Alembic for schema changes
-- Use async database sessions consistently
+* Keep business logic inside service layer
+* Keep DB operations inside repository layer
+* Validate task status transitions
+* Invalidate cache after mutations
+* Use async DB sessions consistently
+* Handle Redis failures gracefully
+
+---
 
 ## Don'ts
 
-- Do not write SQL queries directly inside routes
-- Do not bypass the service layer
-- Do not manually modify database schema without migrations
+* Do not query DB directly from routes
+* Do not bypass service layer
+* Do not update status without validation
+* Do not rely entirely on Redis availability
+
+---
+
+# Future Enhancements
+
+## Planned
+
+* [ ] Celery background task processing
+* [ ] Task assignment concurrency handling
+* [ ] Bulk task operations
+* [ ] Query filtering and pagination
+* [ ] Integration testing
+* [ ] Prometheus metrics
 
 ---
 
 # Changelog
 
-| Date | Author | Change |
-|------|--------|--------|
-| 2026-05-21 | Arpit Garg | Initial project documentation |
+| Date       | Author     | Change                                        |
+| ---------- | ---------- | --------------------------------------------- |
+| 2026-05-21 | Arpit Garg | Initial CRUD documentation                    |
+| 2026-05-22 | Arpit Garg | Added Redis caching documentation             |
+| 2026-05-22 | Arpit Garg | Added task status state machine documentation |
+
+```
+```

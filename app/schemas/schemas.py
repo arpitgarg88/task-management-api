@@ -8,7 +8,7 @@ class TaskCreateRequest(BaseModel):
     title: str
     description: Optional[str] = None
     assigned_to: Optional[int] = None
-    status: TaskStatus = TaskStatus.TODO
+    status: TaskStatus = TaskStatus.PENDING
 
 
 class TaskUpdateRequest(BaseModel):

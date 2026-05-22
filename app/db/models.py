@@ -6,12 +6,10 @@ from app.db.database import Base
 
 
 class TaskStatus(str, enum.Enum):
-    TODO = "todo"
+    PENDING = "pending"
     IN_PROGRESS = "in_progress"
-    REVIEW = "review"
-    DONE = "done"
+    COMPLETED = "completed"
     CANCELLED = "cancelled"
-
 
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
@@ -36,9 +34,14 @@ class Task(Base):
     id = Column(Integer, primary_key=True)
     title = Column(String(255), nullable=False)
     description = Column(Text)
-    status = Column(SAEnum(TaskStatus), default=TaskStatus.TODO)
+    status = Column(SAEnum(TaskStatus), default=TaskStatus.PENDING)
 
-    assigned_to = Column(Integer,ForeignKey("tm_users.id", ondelete="SET NULL"),nullable=True,index=True)
+    assigned_to = Column(
+        Integer,
+        ForeignKey("tm_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

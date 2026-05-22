@@ -1,4 +1,3 @@
-````markdown
 ---
 title: Production-Ready Task Management API
 author: Arpit Garg
@@ -125,7 +124,6 @@ Repository Layer
 SQLAlchemy ORM
       ↓
 PostgreSQL Database
-````
 
 ---
 

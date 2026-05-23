@@ -14,7 +14,6 @@ class TaskCreateRequest(BaseModel):
 class TaskUpdateRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    assigned_to: Optional[int] = None
     status: Optional[TaskStatus] = None
 
 

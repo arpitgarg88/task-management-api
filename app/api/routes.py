@@ -53,3 +53,15 @@ async def update(task_id: int, payload: TaskUpdateRequest, db: AsyncSession = De
 async def delete(task_id: int, db: AsyncSession = Depends(get_db)):
     await TaskService.delete(db, task_id)
     return Response(status_code=204)
+
+
+@router.post(
+    "/{task_id}/assign",
+    response_model=TaskResponse,
+)
+async def assign_task(
+    task_id: int,
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    return await TaskService.assign_task_to_user(db, task_id, user_id)

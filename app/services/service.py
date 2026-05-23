@@ -1,6 +1,6 @@
-from datetime import datetime
 import json
 import logging
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +9,16 @@ from app.core.redis import delete_cache, get_cache, set_cache
 from app.db.models import Task, TaskStatus
 from app.repositories.repository import TaskRepository
 from app.schemas.schemas import (
+    BulkStatusUpdateRequest,
+    BulkStatusUpdateResponse,
+    BulkStatusUpdateItemResponse,
+    BulkTaskCreateRequest,
+    BulkTaskCreateResponse,
+    BulkTaskCreateItemResponse,
+    SortOrder,
     TaskCreateRequest,
     TaskResponse,
+    TaskSortBy,
     TaskUpdateRequest,
 )
 from app.tasks import process_task_completion
@@ -22,8 +30,14 @@ logger = logging.getLogger("task_status")
 class TaskStateMachine:
 
     transitions = {
-        TaskStatus.PENDING: {TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED},
-        TaskStatus.IN_PROGRESS: {TaskStatus.COMPLETED,TaskStatus.CANCELLED},
+        TaskStatus.PENDING: {
+            TaskStatus.IN_PROGRESS,
+            TaskStatus.CANCELLED,
+        },
+        TaskStatus.IN_PROGRESS: {
+            TaskStatus.COMPLETED,
+            TaskStatus.CANCELLED,
+        },
         TaskStatus.COMPLETED: set(),
         TaskStatus.CANCELLED: set(),
     }
@@ -58,6 +72,28 @@ class TaskService:
         return to_response(task)
 
     @staticmethod
+    async def list(
+        session: AsyncSession,
+        status: TaskStatus | None = None,
+        assigned_to: int | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        sort_by: TaskSortBy = TaskSortBy.CREATED_AT,
+        order: SortOrder = SortOrder.DESC,
+    ):
+        tasks = await repo.list_tasks(
+            session=session,
+            status=status,
+            assigned_to=assigned_to,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by.value,
+            order=order.value,
+        )
+
+        return [to_response(task) for task in tasks]
+
+    @staticmethod
     async def get(session: AsyncSession, task_id: int):
         key = task_key(task_id)
         cached = await get_cache(key, {"task_id": task_id})
@@ -69,22 +105,11 @@ class TaskService:
             raise HTTPException(404, "Task not found")
 
         response = to_response(task)
-        await set_cache(key, json.dumps(response.model_dump(mode="json")), ttl=300)
-        return response
-
-    @staticmethod
-    async def list(session: AsyncSession, user_id: int):
-        key = tasks_user_key(user_id)
-        cached = await get_cache(key, {"user_id": user_id})
-        if cached:
-            return [TaskResponse(**t) for t in json.loads(cached)]
-
-        tasks = await repo.list_tasks(session, user_id)
-        response = [to_response(t) for t in tasks]
 
         await set_cache(
             key,
-            json.dumps([r.model_dump(mode="json") for r in response]), ttl=300
+            json.dumps(response.model_dump(mode="json")),
+            ttl=300,
         )
         return response
 
@@ -108,7 +133,10 @@ class TaskService:
 
         if new_status:
 
-            if not TaskStateMachine.can_transition(old_status, new_status):
+            if not TaskStateMachine.can_transition(
+                old_status,
+                new_status,
+            ):
                 raise HTTPException(
                     400,
                     detail=(
@@ -118,7 +146,13 @@ class TaskService:
                 )
 
         if new_status == TaskStatus.COMPLETED:
-            updated_task = await repo.update_task(session, task_id, {"status": TaskStatus.COMPLETED})
+
+            updated_task = await repo.update_task(
+                session,
+                task_id,
+                {"status": TaskStatus.COMPLETED},
+            )
+
             await session.commit()
             await delete_cache(task_key(task_id))
             if old_user:
@@ -126,12 +160,15 @@ class TaskService:
 
             process_task_completion.delay(task.id)
             logger.info(
-                f"[TASK QUEUED] task_id={task.id} for background completion"
+                f"[TASK QUEUED] task_id={task.id}"
             )
             return to_response(updated_task)
 
-        # Normal updates
-        updated = await repo.update_task(session, task_id, data)
+        updated = await repo.update_task(
+            session,
+            task_id,
+            data,
+        )
 
         await session.commit()
 
@@ -173,57 +210,26 @@ class TaskService:
         return None
 
     @staticmethod
-    async def assign_task_to_user(session: AsyncSession, task_id: int, user_id: int):
+    async def assign_task_to_user(
+        session: AsyncSession,
+        task_id: int,
+        user_id: int,
+    ):
 
         user = await repo.get_user(session, user_id)
 
         if not user or not user.is_active:
-
-            logger.warning(
-                f"[TASK ASSIGN FAILED] "
-                f"task_id={task_id} "
-                f"user_id={user_id} "
-                f"outcome=INVALID_USER"
-            )
-
-            raise HTTPException(
-                400,
-                "User invalid or inactive",
-            )
+            raise HTTPException(400, "User invalid or inactive")
 
         task = await repo.get_task(session, task_id)
 
         if not task:
-
-            logger.warning(
-                f"[TASK ASSIGN FAILED] "
-                f"task_id={task_id} "
-                f"user_id={user_id} "
-                f"outcome=TASK_NOT_FOUND"
-            )
-
             raise HTTPException(404, "Task not found")
 
         if task.status != TaskStatus.PENDING:
-
-            logger.warning(
-                f"[TASK ASSIGN FAILED] "
-                f"task_id={task_id} "
-                f"user_id={user_id} "
-                f"outcome=INVALID_STATUS"
-            )
-
             raise HTTPException(400, "Task not assignable")
 
         if task.assigned_to is not None:
-
-            logger.warning(
-                f"[TASK ASSIGN FAILED] "
-                f"task_id={task_id} "
-                f"user_id={user_id} "
-                f"outcome=ALREADY_ASSIGNED"
-            )
-
             raise HTTPException(400, "Task already assigned")
 
         updated = await repo.assign_task_to_user(
@@ -234,27 +240,72 @@ class TaskService:
 
         if not updated:
             await session.rollback()
-
-            logger.warning(
-                f"[TASK ASSIGN FAILED] "
-                f"task_id={task_id} "
-                f"user_id={user_id} "
-                f"outcome=CONCURRENT_MODIFICATION"
+            raise HTTPException(
+                409,
+                "Task already assigned by another request",
             )
-
-            raise HTTPException(409, "Task already assigned by another request")
 
         await session.commit()
 
         await delete_cache(task_key(task_id))
         await delete_cache(tasks_user_key(user_id))
 
-        logger.info(
-            f"[TASK ASSIGNED] "
-            f"task_id={task_id} "
-            f"user_id={user_id} "
-            f"outcome=SUCCESS "
-            f"timestamp={datetime.utcnow().isoformat()}"
-        )
-
         return to_response(updated)
+
+    @staticmethod
+    async def bulk_create(
+        session: AsyncSession,
+        payload: BulkTaskCreateRequest,
+    ):
+        results = []
+        for item in payload.tasks:
+            try:
+                created = await TaskService.create(session, item)
+                results.append(
+                    BulkTaskCreateItemResponse(
+                        success=True,
+                        data=created,
+                    )
+                )
+
+            except Exception as exc:
+                results.append(
+                    BulkTaskCreateItemResponse(
+                        success=False,
+                        error=str(exc),
+                    )
+                )
+        return BulkTaskCreateResponse(results=results)
+
+    @staticmethod
+    async def bulk_update_status(
+        session: AsyncSession,
+        payload: BulkStatusUpdateRequest,
+    ):
+        results = []
+        for item in payload.tasks:
+            try:
+                updated = await TaskService.update(
+                    session=session,
+                    task_id=item.task_id,
+                    payload=TaskUpdateRequest(
+                        status=item.status
+                    ),
+                )
+                results.append(
+                    BulkStatusUpdateItemResponse(
+                        task_id=item.task_id,
+                        success=True,
+                        data=updated,
+                    )
+                )
+
+            except Exception as exc:
+                results.append(
+                    BulkStatusUpdateItemResponse(
+                        task_id=item.task_id,
+                        success=False,
+                        error=str(exc),
+                    )
+                )
+        return BulkStatusUpdateResponse(results=results)

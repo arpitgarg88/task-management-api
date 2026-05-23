@@ -29,6 +29,8 @@ The system supports:
 - Redis caching with DB fallback
 - Celery async background processing
 - Task status state machine validation
+- Query filtering and pagination
+- Bulk task operations
 - Layered architecture
 - Async PostgreSQL integration
 - Cache invalidation strategies
@@ -51,6 +53,7 @@ The system supports:
 - [Running the Application](#running-the-application)
 - [Running Celery Worker](#running-celery-worker)
 - [API Documentation](#api-documentation)
+- [Phase 5 Enhancements](#phase-5-enhancements)
 - [Redis Caching](#redis-caching)
 - [Task Status State Machine](#task-status-state-machine)
 - [Celery Background Tasks](#celery-background-tasks)
@@ -59,6 +62,7 @@ The system supports:
 - [Common Errors & Fixes](#common-errors--fixes)
 - [Developer Guidelines](#developer-guidelines)
 - [Future Enhancements](#future-enhancements)
+- [Changelog](#changelog)
 
 ---
 
@@ -75,6 +79,8 @@ The task management system required:
 - Background task execution
 - Cache optimization
 - Fault tolerance
+- Bulk task handling
+- Scalable querying support
 
 Without these:
 
@@ -83,6 +89,7 @@ Without these:
 - Long-running operations blocked APIs
 - Redis failures could break APIs
 - Background processing was unavailable
+- Large task datasets became difficult to manage
 
 ---
 
@@ -96,6 +103,8 @@ This implementation introduces:
 - Celery background workers
 - Repository-service architecture
 - Task status state machine
+- Query filtering + pagination
+- Bulk operations support
 - Cache invalidation handling
 - Graceful Redis fallback
 - Dockerized infrastructure
@@ -126,6 +135,10 @@ This implementation introduces:
 - Alembic migrations
 - Structured logging
 - Graceful failure handling
+- Query filtering
+- Bulk task creation
+- Bulk task status updates
+- Partial failure handling
 
 ---
 
@@ -150,7 +163,7 @@ PostgreSQL Database
 
 Background Tasks:
 FastAPI → Celery → Redis Broker → Worker
-````
+```
 
 ---
 
@@ -203,11 +216,9 @@ task-management/
 │   ├── api/
 │   │   └── routes.py
 │   │
-│   ├── cache/
-│   │   └── cache.py
-│   │
 │   ├── core/
 │   │   ├── config.py
+│   │   ├── redis.py
 │   │   └── celery_app.py
 │   │
 │   ├── db/
@@ -222,6 +233,9 @@ task-management/
 │   │
 │   ├── services/
 │   │   └── service.py
+│   │
+│   ├── utils/
+│   │   └── cache_key.py
 │   │
 │   ├── tasks.py
 │   └── main.py
@@ -290,7 +304,7 @@ Create a `.env` file in project root.
 ## Example `.env`
 
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/taskdb
+DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/taskdb
 
 REDIS_URL=redis://localhost:6379/0
 ```
@@ -315,8 +329,8 @@ docker ps
 
 Expected containers:
 
-* PostgreSQL
-* Redis
+- PostgreSQL
+- Redis
 
 ---
 
@@ -412,28 +426,6 @@ celery -A app.tasks worker -Q task_completion_queue --pool=solo --loglevel=info
 
 ---
 
-## Linux / Mac
-
-```bash
-celery -A app.tasks worker -Q task_completion_queue --loglevel=info
-```
-
----
-
-# Why `--pool=solo` on Windows?
-
-Windows does not fully support prefork multiprocessing used by Celery.
-
-Using:
-
-```bash
---pool=solo
-```
-
-prevents worker crashes on Windows.
-
----
-
 # API Documentation
 
 # POST `/tasks`
@@ -447,7 +439,7 @@ prevents worker crashes on Windows.
   "title": "Build Redis Cache",
   "description": "Implement Redis caching",
   "assigned_to": 1,
-  "status": "PENDING"
+  "status": "pending"
 }
 ```
 
@@ -455,12 +447,45 @@ prevents worker crashes on Windows.
 
 # GET `/tasks`
 
-## Fetch All Tasks
+## Fetch Tasks With Filters
 
-### Cache Key
+### Supported Query Parameters
 
-```text
-tasks:user:{user_id}
+| Parameter     | Example                         |
+| ------------- | ------------------------------- |
+| status        | `?status=in_progress`           |
+| assigned_to   | `?assigned_to=1`                |
+| limit         | `?limit=20`                     |
+| offset        | `?offset=0`                     |
+| sort_by       | `?sort_by=created_at`           |
+| order         | `?order=desc`                   |
+
+---
+
+## Examples
+
+### Fetch Completed Tasks
+
+```http
+GET /tasks?status=completed
+```
+
+### Fetch Tasks Assigned To User
+
+```http
+GET /tasks?assigned_to=1
+```
+
+### Pagination
+
+```http
+GET /tasks?limit=10&offset=0
+```
+
+### Sorting
+
+```http
+GET /tasks?sort_by=updated_at&order=asc
 ```
 
 ---
@@ -483,9 +508,9 @@ task:{task_id}
 
 Supports:
 
-* title update
-* description update
-* status update
+- title update
+- description update
+- status update
 
 ---
 
@@ -497,6 +522,97 @@ Returns:
 
 ```text
 204 No Content
+```
+
+---
+
+# POST `/tasks/bulk`
+
+## Bulk Create Tasks
+
+### Request
+
+```json
+{
+  "tasks": [
+    {
+      "title": "Task A",
+      "description": "Description A"
+    },
+    {
+      "title": "Task B",
+      "description": "Description B"
+    }
+  ]
+}
+```
+
+---
+
+## Response
+
+```json
+{
+  "results": [
+    {
+      "success": true,
+      "data": {
+        "id": 1,
+        "title": "Task A"
+      }
+    },
+    {
+      "success": true,
+      "data": {
+        "id": 2,
+        "title": "Task B"
+      }
+    }
+  ]
+}
+```
+
+---
+
+# PUT `/tasks/bulk/status`
+
+## Bulk Update Task Status
+
+### Request
+
+```json
+{
+  "tasks": [
+    {
+      "task_id": 1,
+      "status": "in_progress"
+    },
+    {
+      "task_id": 2,
+      "status": "completed"
+    }
+  ]
+}
+```
+
+---
+
+## Partial Failure Response Example
+
+```json
+{
+  "results": [
+    {
+      "task_id": 1,
+      "success": true
+    },
+    {
+      "task_id": 999,
+      "success": false,
+      "error": "Task not found"
+    }
+  ]
+}
 ```
 
 ---
@@ -516,9 +632,11 @@ Returns:
 
 Triggered on:
 
-* task creation
-* task update
-* task deletion
+- task creation
+- task update
+- task deletion
+- task assignment
+- bulk task operations
 
 ---
 
@@ -527,7 +645,8 @@ Triggered on:
 ```text
 [CACHE HIT]
 [CACHE MISS]
-[REDIS ERROR]
+[CACHE SET]
+[CACHE DELETE]
 ```
 
 ---
@@ -536,9 +655,8 @@ Triggered on:
 
 If Redis is unavailable:
 
-* API falls back to PostgreSQL
-* Request still succeeds
-* Warning logs generated
+- API falls back to PostgreSQL
+- Request still succeeds
 
 ---
 
@@ -603,12 +721,12 @@ Background Processing
 
 # Current Background Features
 
-* Async task completion workflow
-* Status updates
-* Notification simulation
-* Analytics simulation
-* Automatic retries
-* Retry backoff
+- Async task completion workflow
+- Notification simulation
+- Analytics simulation
+- Activity feed simulation
+- Search indexing simulation
+- Automatic retries
 
 ---
 
@@ -616,9 +734,10 @@ Background Processing
 
 ```text
 [TASK WORKER START]
-[TASK STATUS UPDATED]
-[TASK NOTIFICATION SENT]
-[TASK ANALYTICS UPDATED]
+[TASK NOTIFICATION PROCESSING]
+[TASK ANALYTICS PROCESSING]
+[TASK ACTIVITY FEED UPDATED]
+[TASK SEARCH INDEX UPDATED]
 [TASK WORKER DONE]
 ```
 
@@ -689,7 +808,7 @@ Update task status:
 
 ```json
 {
-  "status": "COMPLETED"
+  "status": "completed"
 }
 ```
 
@@ -697,8 +816,39 @@ Observe worker logs:
 
 ```text
 [TASK WORKER START]
-[TASK STATUS UPDATED]
 [TASK WORKER DONE]
+```
+
+---
+
+# Test Bulk Create
+
+```json
+{
+  "tasks": [
+    {
+      "title": "Task 1"
+    },
+    {
+      "title": "Task 2"
+    }
+  ]
+}
+```
+
+---
+
+# Test Bulk Status Update
+
+```json
+{
+  "tasks": [
+    {
+      "task_id": 1,
+      "status": "in_progress"
+    }
+  ]
+}
 ```
 
 ---
@@ -759,14 +909,15 @@ Expected:
 
 # Common Errors & Fixes
 
-| Error                                      | Cause                              | Fix                                  |
-| ------------------------------------------ | ---------------------------------- | ------------------------------------ |
-| `Connection refused`                       | PostgreSQL/Redis not running       | Start Docker containers              |
-| `ForeignKeyViolationError`                 | User missing                       | Insert user first                    |
-| `Invalid status transition`                | Invalid workflow                   | Use allowed transitions              |
-| `Redis connection error`                   | Redis down                         | Restart Redis container              |
-| `another operation is in progress`         | Async event loop misuse            | Use dedicated loop in Celery         |
-| `'NoneType' object has no attribute send'` | Notification service misconfigured | Initialize mail/notification service |
+| Error                              | Cause                        | Fix                             |
+| ---------------------------------- | ---------------------------- | ------------------------------- |
+| Connection refused                 | PostgreSQL/Redis not running | Start Docker containers         |
+| ForeignKeyViolationError           | User missing                 | Insert user first               |
+| Invalid status transition          | Invalid workflow             | Use allowed transitions         |
+| Redis connection error             | Redis down                   | Restart Redis container         |
+| another operation is in progress   | Async event loop misuse      | Use dedicated loop in Celery    |
+| Task already assigned              | Concurrent assignment        | Retry request                   |
+| Task already assigned by another request | Race condition handling | Request safely rejected         |
 
 ---
 
@@ -816,31 +967,6 @@ docker compose down -v
 
 ---
 
-# Developer Guidelines
-
-# Do's
-
-* Keep business logic inside services
-* Keep DB operations inside repositories
-* Use async DB sessions
-* Validate state transitions
-* Invalidate cache after updates
-* Handle Redis failures gracefully
-* Use structured logging
-
----
-
-# Don'ts
-
-* Do not query DB directly from routes
-* Do not bypass service layer
-* Do not bypass repository layer
-* Do not mutate status without validation
-* Do not depend entirely on Redis
-* Do not share AsyncSession globally
-
----
-
 # Changelog
 
 | Date       | Author     | Change                                 |
@@ -851,7 +977,8 @@ docker compose down -v
 | 2026-05-23 | Arpit Garg | Added Celery integration               |
 | 2026-05-23 | Arpit Garg | Added async background processing      |
 | 2026-05-23 | Arpit Garg | Added production-ready worker handling |
+| 2026-05-23 | Arpit Garg | Added filtering and pagination         |
+| 2026-05-23 | Arpit Garg | Added bulk task operations             |
+| 2026-05-23 | Arpit Garg | Added partial failure handling         |
 
 ---
-
-```

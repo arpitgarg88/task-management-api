@@ -89,10 +89,15 @@ class TaskService:
         return response
 
     @staticmethod
-    async def update(session: AsyncSession, task_id: int, payload: TaskUpdateRequest):
+    async def update(
+        session: AsyncSession,
+        task_id: int,
+        payload: TaskUpdateRequest,
+    ):
         data = payload.model_dump(exclude_unset=True)
 
         task = await repo.get_task(session, task_id)
+
         if not task:
             raise HTTPException(404, "Task not found")
 
@@ -100,14 +105,32 @@ class TaskService:
         old_status = task.status
 
         new_status = data.get("status")
+
         if new_status:
 
             if not TaskStateMachine.can_transition(old_status, new_status):
                 raise HTTPException(
                     400,
-                    detail=(f"Invalid status transition from '{old_status}' to '{new_status}'")
+                    detail=(
+                        f"Invalid status transition "
+                        f"from '{old_status}' to '{new_status}'"
+                    ),
                 )
 
+        if new_status == TaskStatus.COMPLETED:
+            updated_task = await repo.update_task(session, task_id, {"status": TaskStatus.COMPLETED})
+            await session.commit()
+            await delete_cache(task_key(task_id))
+            if old_user:
+                await delete_cache(tasks_user_key(old_user))
+
+            process_task_completion.delay(task.id)
+            logger.info(
+                f"[TASK QUEUED] task_id={task.id} for background completion"
+            )
+            return to_response(updated_task)
+
+        # Normal updates
         updated = await repo.update_task(session, task_id, data)
 
         await session.commit()
@@ -118,6 +141,7 @@ class TaskService:
             await delete_cache(tasks_user_key(old_user))
 
         if new_status and new_status != old_status:
+
             logger.info(
                 f"[TASK STATUS CHANGE] "
                 f"user_id={updated.assigned_to} "
@@ -126,16 +150,6 @@ class TaskService:
                 f"new_status={new_status} "
                 f"timestamp={datetime.utcnow().isoformat()}"
             )
-
-            if new_status == TaskStatus.COMPLETED:
-
-                process_task_completion.delay(updated.id)
-
-                logger.info(
-                    f"[TASK QUEUED] "
-                    f"task_id={updated.id} "
-                    f"for background processing"
-                )
 
         return to_response(updated)
 

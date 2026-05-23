@@ -240,7 +240,7 @@ task-management/
 # 1. Clone Repository
 
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/arpitgarg88/task-management-api
 ```
 
 ---
@@ -269,12 +269,6 @@ python -m venv .venv
 
 ```bash
 .venv\Scripts\Activate.ps1
-```
-
-## Windows CMD
-
-```bash
-.venv\Scripts\activate.bat
 ```
 
 ---
@@ -848,21 +842,6 @@ docker compose down -v
 * Do not mutate status without validation
 * Do not depend entirely on Redis
 * Do not share AsyncSession globally
-
----
-
-# Future Enhancements
-
-* [ ] JWT Authentication
-* [ ] Role-based access control
-* [ ] Pagination
-* [ ] Filtering
-* [ ] Bulk task operations
-* [ ] WebSocket notifications
-* [ ] Prometheus metrics
-* [ ] Grafana dashboards
-* [ ] Integration testing
-* [ ] Kubernetes deployment
 
 ---
 

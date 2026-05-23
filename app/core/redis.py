@@ -1,13 +1,11 @@
 import redis.asyncio as redis
-import os
 import logging
-from dotenv import load_dotenv
+from app.core.config import settings
 
-load_dotenv()
 
 logger = logging.getLogger("cache")
 
-REDIS_URL = os.getenv("REDIS_URL")
+REDIS_URL = settings.REDIS_URL
 
 redis_client = None
 

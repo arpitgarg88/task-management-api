@@ -17,6 +17,17 @@ from app.schemas.schemas import (
 )
 from app.services.service import TaskService
 
+"""
+HTTP API routes for task management operations.
+
+Responsible only for:
+- request parsing
+- dependency injection
+- response serialization
+
+Business logic is delegated to the service layer.
+"""
+
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 

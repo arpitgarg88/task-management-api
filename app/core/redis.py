@@ -2,6 +2,17 @@ import redis.asyncio as redis
 import logging
 from app.core.config import settings
 
+"""
+Redis cache utilities.
+
+Provides:
+- Redis initialization
+- cache retrieval
+- cache storage
+- cache invalidation
+
+All cache failures degrade gracefully without affecting API availability.
+"""
 
 logger = logging.getLogger("cache")
 
@@ -11,6 +22,9 @@ redis_client = None
 
 
 async def init_redis():
+    """
+    Initializes Redis connection pool.
+    """
     global redis_client
     try:
         redis_client = redis.from_url(REDIS_URL, decode_responses=True)
@@ -21,6 +35,18 @@ async def init_redis():
 
 
 async def get_cache(key: str, context: dict = None):
+    """
+    Fetches cached value by key.
+
+    Logs cache hit/miss metrics for observability.
+
+    Args:
+        key (str): Cache key.
+        context (dict | None): Additional logging metadata.
+
+    Returns:
+        str | None: Cached value if found.
+    """
     if not redis_client:
         return None
 
@@ -40,6 +66,14 @@ async def get_cache(key: str, context: dict = None):
 
 
 async def set_cache(key: str, value: str, ttl: int = 300):
+    """
+    Stores value in Redis with TTL expiration.
+
+    Args:
+        key (str): Cache key.
+        value (str): Serialized cache payload.
+        ttl (int): Expiration time in seconds.
+    """
     if not redis_client:
         return
 
@@ -52,6 +86,12 @@ async def set_cache(key: str, value: str, ttl: int = 300):
 
 
 async def delete_cache(key: str):
+    """
+    Deletes cached entry if present.
+
+    Args:
+        key (str): Cache key to invalidate.
+    """
     if not redis_client:
         return
 

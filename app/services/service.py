@@ -24,11 +24,29 @@ from app.schemas.schemas import (
 from app.tasks import process_task_completion
 from app.utils.cache_key import task_key, tasks_user_key
 
+"""
+Business service layer for task management workflows.
+
+Responsible for:
+- validation
+- orchestration
+- caching
+- transactional behavior
+- state transitions
+- background task dispatching
+"""
+
 repo = TaskRepository()
 logger = logging.getLogger("task_status")
 
 class TaskStateMachine:
+    """
+    Controls valid task lifecycle transitions.
 
+    Prevents invalid workflow mutations such as:
+    COMPLETED -> PENDING
+    CANCELLED -> IN_PROGRESS
+    """
     transitions = {
         TaskStatus.PENDING: {
             TaskStatus.IN_PROGRESS,
@@ -41,12 +59,25 @@ class TaskStateMachine:
         TaskStatus.COMPLETED: set(),
         TaskStatus.CANCELLED: set(),
     }
-
+    
     @classmethod
     def can_transition(cls, from_status, to_status):
+        """
+        Checks whether task status transition is allowed.
+
+        Args:
+            from_status: Current task status.
+            to_status: Requested next status.
+
+        Returns:
+            bool: True if transition is valid.
+        """
         return to_status in cls.transitions.get(from_status, set())
 
 def to_response(task: Task) -> TaskResponse:
+    """
+    Converts ORM Task model into API response schema.
+    """
     return TaskResponse(
         id=task.id,
         title=task.title,
@@ -58,9 +89,21 @@ def to_response(task: Task) -> TaskResponse:
     )
 
 class TaskService:
+    """
+    Service layer containing business logic for task management.
 
+    Responsibilities:
+    - validation
+    - cache orchestration
+    - state machine enforcement
+    - transaction handling
+    - async worker triggering
+    """
     @staticmethod
     async def create(session: AsyncSession, payload: TaskCreateRequest):
+        """
+    Creates a new task and invalidates related cache entries.
+    """
         task = Task(**payload.model_dump())
 
         task = await repo.create_task(session, task)
@@ -81,6 +124,9 @@ class TaskService:
         sort_by: TaskSortBy = TaskSortBy.CREATED_AT,
         order: SortOrder = SortOrder.DESC,
     ):
+        """
+        Returns filtered and paginated task list.
+        """
         tasks = await repo.list_tasks(
             session=session,
             status=status,
@@ -95,6 +141,11 @@ class TaskService:
 
     @staticmethod
     async def get(session: AsyncSession, task_id: int):
+        """
+        Fetches task by ID using cache-first strategy.
+
+        Falls back to database on cache miss.
+        """
         key = task_key(task_id)
         cached = await get_cache(key, {"task_id": task_id})
         if cached:
@@ -119,6 +170,12 @@ class TaskService:
         task_id: int,
         payload: TaskUpdateRequest,
     ):
+        """
+        Updates task fields with lifecycle transition validation.
+
+        Triggers asynchronous completion workflow when task
+        moves into COMPLETED state.
+        """
         data = payload.model_dump(exclude_unset=True)
 
         task = await repo.get_task(session, task_id)
@@ -192,6 +249,9 @@ class TaskService:
 
     @staticmethod
     async def delete(session: AsyncSession, task_id: int):
+        """
+        Deletes task and invalidates related cache entries.
+        """
         task = await repo.get_task(session, task_id)
         if not task:
             raise HTTPException(404, "Task not found")
@@ -215,7 +275,11 @@ class TaskService:
         task_id: int,
         user_id: int,
     ):
+        """
+        Assigns pending unassigned task to active user.
 
+        Includes concurrency-safe assignment protection.
+        """
         user = await repo.get_user(session, user_id)
 
         if not user or not user.is_active:
@@ -257,6 +321,9 @@ class TaskService:
         session: AsyncSession,
         payload: BulkTaskCreateRequest,
     ):
+        """
+        Creates multiple tasks with partial failure handling.
+        """
         results = []
         for item in payload.tasks:
             try:
@@ -282,6 +349,11 @@ class TaskService:
         session: AsyncSession,
         payload: BulkStatusUpdateRequest,
     ):
+        """
+        Updates status for multiple tasks independently.
+
+        Failures in one task do not interrupt remaining updates.
+        """
         results = []
         for item in payload.tasks:
             try:

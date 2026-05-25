@@ -5,6 +5,13 @@ from celery import shared_task
 
 logger = logging.getLogger("task_worker")
 
+"""
+Celery background workers for asynchronous task processing.
+
+Contains long-running or non-blocking workflows triggered
+after task lifecycle events.
+"""
+
 MAX_RETRIES = 3
 
 @shared_task(
@@ -14,6 +21,20 @@ MAX_RETRIES = 3
     retry_jitter=True,
 )
 def process_task_completion(self, task_id: int):
+    """
+    Background workflow executed after a task is completed.
+
+    Simulates:
+    - notification dispatch
+    - analytics processing
+    - activity feed updates
+    - search indexing
+
+    Retries automatically on failure using Celery retry policies.
+
+    Args:
+        task_id (int): ID of completed task.
+    """
     logger.info(f"[TASK WORKER START] task_id={task_id}")
     try:
         logger.info(f"[TASK NOTIFICATION PROCESSING] task_id={task_id}")

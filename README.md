@@ -2,10 +2,8 @@
 title: Production-Ready Task Management API
 author: Arpit Garg
 created: 2026-05-21
-updated: 2026-05-23
+updated: 2026-05-25
 status: Active
-ticket: INTERN-TASK-MANAGEMENT
-pr: N/A
 tags: fastapi, postgresql, sqlalchemy, alembic, redis, celery, async-api, docker, state-machine
 ---
 
@@ -13,7 +11,7 @@ tags: fastapi, postgresql, sqlalchemy, alembic, redis, celery, async-api, docker
 
 ## TL;DR (30 Seconds Read)
 
-Production-ready Task Management API built using:
+Production-ready asynchronous Task Management API built using:
 
 - FastAPI
 - PostgreSQL
@@ -31,11 +29,11 @@ The system supports:
 - Task status state machine validation
 - Query filtering and pagination
 - Bulk task operations
-- Layered architecture
-- Async PostgreSQL integration
-- Cache invalidation strategies
+- Partial failure handling
+- Concurrent-safe task assignment
+- Layered backend architecture
 - Structured logging
-- Production-style backend workflows
+- Production-style workflows
 
 ---
 
@@ -44,6 +42,7 @@ The system supports:
 - [Overview](#overview)
 - [Features](#features)
 - [Architecture](#architecture)
+- [Developer Documentation](#developer-documentation)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Setup Guide](#setup-guide)
@@ -53,14 +52,15 @@ The system supports:
 - [Running the Application](#running-the-application)
 - [Running Celery Worker](#running-celery-worker)
 - [API Documentation](#api-documentation)
-- [Phase 5 Enhancements](#phase-5-enhancements)
 - [Redis Caching](#redis-caching)
 - [Task Status State Machine](#task-status-state-machine)
 - [Celery Background Tasks](#celery-background-tasks)
+- [Bulk Operations](#bulk-operations)
+- [Concurrency Handling](#concurrency-handling)
 - [Testing Guide](#testing-guide)
 - [Database Tables](#database-tables)
 - [Common Errors & Fixes](#common-errors--fixes)
-- [Developer Guidelines](#developer-guidelines)
+- [Useful Docker Commands](#useful-docker-commands)
 - [Future Enhancements](#future-enhancements)
 - [Changelog](#changelog)
 
@@ -72,14 +72,15 @@ The system supports:
 
 The task management system required:
 
-- Production-grade architecture
+- Production-grade backend architecture
 - Async database support
 - Efficient task retrieval
-- Controlled task lifecycle
+- Controlled task lifecycle management
 - Background task execution
 - Cache optimization
-- Fault tolerance
+- Failure resilience
 - Bulk task handling
+- Concurrent-safe workflows
 - Scalable querying support
 
 Without these:
@@ -88,23 +89,26 @@ Without these:
 - Invalid task transitions corrupted workflows
 - Long-running operations blocked APIs
 - Redis failures could break APIs
+- Concurrent assignments created race conditions
+- Bulk workflows became unreliable
 - Background processing was unavailable
-- Large task datasets became difficult to manage
 
 ---
 
-## Solution Summary
+# Solution Summary
 
 This implementation introduces:
 
 - FastAPI async APIs
 - PostgreSQL async integration
-- Redis caching layer
+- Redis cache-aside strategy
 - Celery background workers
 - Repository-service architecture
 - Task status state machine
 - Query filtering + pagination
-- Bulk operations support
+- Bulk operation support
+- Partial failure handling
+- Concurrent-safe assignment
 - Cache invalidation handling
 - Graceful Redis fallback
 - Dockerized infrastructure
@@ -126,7 +130,7 @@ This implementation introduces:
 
 - Redis caching
 - Cache invalidation
-- Celery async workers
+- Celery background workers
 - Background task processing
 - State machine validation
 - Async PostgreSQL
@@ -136,9 +140,11 @@ This implementation introduces:
 - Structured logging
 - Graceful failure handling
 - Query filtering
+- Pagination
 - Bulk task creation
 - Bulk task status updates
-- Partial failure handling
+- Partial failure responses
+- Concurrent-safe assignment workflow
 
 ---
 
@@ -175,12 +181,13 @@ flowchart TD
 A[Client / Swagger UI]
 
 A --> B[Routes Layer]
+
 B --> C[Service Layer]
 
 C --> D[Redis Cache]
 C --> E[Repository Layer]
 
-E --> F[SQLAlchemy ORM]
+E --> F[SQLAlchemy Async ORM]
 F --> G[(PostgreSQL)]
 
 C --> H[Celery Queue]
@@ -190,18 +197,81 @@ I --> J[Celery Worker]
 
 ---
 
+# Developer Documentation
+
+Detailed internal backend architecture and workflow documentation is available inside the `docs/` directory.
+
+## Available Documents
+
+| Document | Purpose |
+|---|---|
+| `docs/ARCHITECTURE.md` | Complete system architecture, layers, Redis, Celery, DB, concurrency, scalability |
+| `docs/WORKFLOWS.md` | Route-by-route execution lifecycle and internal DB interaction workflows |
+
+---
+
+## Documentation Coverage
+
+The documentation includes:
+
+- layered backend architecture
+- request lifecycle
+- service orchestration
+- repository workflows
+- cache lifecycle
+- Celery execution pipeline
+- state machine execution
+- concurrency-safe assignment logic
+- transaction lifecycle
+- partial failure handling
+- background processing workflows
+- Redis fallback strategy
+- internal route → DB interaction charts
+- production deployment architecture
+
+---
+
+## Recommended Reading Order
+
+For new developers:
+
+```text
+README.md
+   ↓
+docs/ARCHITECTURE.md
+   ↓
+docs/WORKFLOWS.md
+   ↓
+Swagger Documentation
+```
+
+---
+
+## Documentation Philosophy
+
+The docs are intentionally:
+
+- developer-friendly
+- onboarding-focused
+- architecture-oriented
+- workflow-centric
+- production-oriented
+- scalable for future contributors
+
+---
+
 # Tech Stack
 
-| Technology       | Purpose                    |
-| ---------------- | -------------------------- |
-| FastAPI          | API framework              |
-| PostgreSQL       | Primary database           |
-| SQLAlchemy Async | ORM                        |
-| Alembic          | Database migrations        |
-| Redis            | Cache + Celery broker      |
-| Celery           | Background task processing |
-| Docker           | Containerization           |
-| Uvicorn          | ASGI server                |
+| Technology | Purpose |
+|---|---|
+| FastAPI | API framework |
+| PostgreSQL | Primary database |
+| SQLAlchemy Async | ORM |
+| Alembic | Database migrations |
+| Redis | Cache + Celery broker |
+| Celery | Background task processing |
+| Docker | Containerization |
+| Uvicorn | ASGI server |
 
 ---
 
@@ -239,6 +309,10 @@ task-management/
 │   │
 │   ├── tasks.py
 │   └── main.py
+│
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── WORKFLOWS.md
 │
 ├── .env
 ├── docker-compose.yml
@@ -428,202 +502,38 @@ celery -A app.tasks worker -Q task_completion_queue --pool=solo --loglevel=info
 
 # API Documentation
 
-# POST `/tasks`
+Swagger automatically documents all API routes.
 
-## Create Task
-
-### Request
-
-```json
-{
-  "title": "Build Redis Cache",
-  "description": "Implement Redis caching",
-  "assigned_to": 1,
-  "status": "pending"
-}
-```
-
----
-
-# GET `/tasks`
-
-## Fetch Tasks With Filters
-
-### Supported Query Parameters
-
-| Parameter     | Example                         |
-| ------------- | ------------------------------- |
-| status        | `?status=in_progress`           |
-| assigned_to   | `?assigned_to=1`                |
-| limit         | `?limit=20`                     |
-| offset        | `?offset=0`                     |
-| sort_by       | `?sort_by=created_at`           |
-| order         | `?order=desc`                   |
-
----
-
-## Examples
-
-### Fetch Completed Tasks
-
-```http
-GET /tasks?status=completed
-```
-
-### Fetch Tasks Assigned To User
-
-```http
-GET /tasks?assigned_to=1
-```
-
-### Pagination
-
-```http
-GET /tasks?limit=10&offset=0
-```
-
-### Sorting
-
-```http
-GET /tasks?sort_by=updated_at&order=asc
-```
-
----
-
-# GET `/tasks/{task_id}`
-
-## Fetch Task By ID
-
-### Cache Key
+## Swagger URL
 
 ```text
-task:{task_id}
+http://127.0.0.1:8000/docs
 ```
 
 ---
 
-# PUT `/tasks/{task_id}`
+## Available APIs
 
-## Update Task
-
-Supports:
-
-- title update
-- description update
-- status update
-
----
-
-# DELETE `/tasks/{task_id}`
-
-## Delete Task
-
-Returns:
-
-```text
-204 No Content
-```
-
----
-
-# POST `/tasks/bulk`
-
-## Bulk Create Tasks
-
-### Request
-
-```json
-{
-  "tasks": [
-    {
-      "title": "Task A",
-      "description": "Description A"
-    },
-    {
-      "title": "Task B",
-      "description": "Description B"
-    }
-  ]
-}
-```
-
----
-
-## Response
-
-```json
-{
-  "results": [
-    {
-      "success": true,
-      "data": {
-        "id": 1,
-        "title": "Task A"
-      }
-    },
-    {
-      "success": true,
-      "data": {
-        "id": 2,
-        "title": "Task B"
-      }
-    }
-  ]
-}
-```
-
----
-
-# PUT `/tasks/bulk/status`
-
-## Bulk Update Task Status
-
-### Request
-
-```json
-{
-  "tasks": [
-    {
-      "task_id": 1,
-      "status": "in_progress"
-    },
-    {
-      "task_id": 2,
-      "status": "completed"
-    }
-  ]
-}
-```
-
----
-
-## Partial Failure Response Example
-
-```json
-{
-  "results": [
-    {
-      "task_id": 1,
-      "success": true
-    },
-    {
-      "task_id": 999,
-      "success": false,
-      "error": "Task not found"
-    }
-  ]
-}
-```
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/tasks` | Create task |
+| GET | `/tasks` | List tasks |
+| GET | `/tasks/{task_id}` | Get task |
+| PUT | `/tasks/{task_id}` | Update task |
+| DELETE | `/tasks/{task_id}` | Delete task |
+| POST | `/tasks/{task_id}/assign` | Assign task |
+| POST | `/tasks/bulk` | Bulk create |
+| PUT | `/tasks/bulk/status` | Bulk status update |
 
 ---
 
 # Redis Caching
 
-# Cache Strategy
+## Cache Strategy
 
-| Operation       | Cache Key              | TTL  |
-| --------------- | ---------------------- | ---- |
-| Get Task By ID  | `task:{task_id}`       | 300s |
+| Operation | Cache Key | TTL |
+|---|---|---|
+| Get Task By ID | `task:{task_id}` | 300s |
 | List User Tasks | `tasks:user:{user_id}` | 300s |
 
 ---
@@ -662,12 +572,12 @@ If Redis is unavailable:
 
 # Task Status State Machine
 
-| Current Status | Allowed Transition     |
-| -------------- | ---------------------- |
-| PENDING        | IN_PROGRESS, CANCELLED |
-| IN_PROGRESS    | COMPLETED, CANCELLED   |
-| COMPLETED      | Not Allowed            |
-| CANCELLED      | Not Allowed            |
+| Current Status | Allowed Transition |
+|---|---|
+| PENDING | IN_PROGRESS, CANCELLED |
+| IN_PROGRESS | COMPLETED, CANCELLED |
+| COMPLETED | Not Allowed |
+| CANCELLED | Not Allowed |
 
 ---
 
@@ -703,7 +613,9 @@ COMPLETED → PENDING
 
 Celery handles asynchronous task execution.
 
-Example workflow:
+---
+
+# Workflow
 
 ```text
 Task Updated
@@ -721,7 +633,6 @@ Background Processing
 
 # Current Background Features
 
-- Async task completion workflow
 - Notification simulation
 - Analytics simulation
 - Activity feed simulation
@@ -739,6 +650,73 @@ Background Processing
 [TASK ACTIVITY FEED UPDATED]
 [TASK SEARCH INDEX UPDATED]
 [TASK WORKER DONE]
+```
+
+---
+
+# Bulk Operations
+
+The API supports partial-failure bulk workflows.
+
+---
+
+# Bulk Create
+
+```http
+POST /tasks/bulk
+```
+
+---
+
+# Bulk Status Update
+
+```http
+PUT /tasks/bulk/status
+```
+
+---
+
+# Partial Failure Example
+
+```json
+{
+  "results": [
+    {
+      "success": true
+    },
+    {
+      "success": false,
+      "error": "Task not found"
+    }
+  ]
+}
+```
+
+---
+
+# Concurrency Handling
+
+Task assignment uses atomic SQL updates to prevent race conditions.
+
+---
+
+# Protected Workflow
+
+```text
+Request A assigns task
+Request B assigns same task
+```
+
+Only one request succeeds.
+
+---
+
+# Conflict Response
+
+```json
+{
+  "detail": "Task already assigned by another request"
+}
 ```
 
 ---
@@ -838,21 +816,6 @@ Observe worker logs:
 
 ---
 
-# Test Bulk Status Update
-
-```json
-{
-  "tasks": [
-    {
-      "task_id": 1,
-      "status": "in_progress"
-    }
-  ]
-}
-```
-
----
-
 # Test State Machine
 
 ## Valid
@@ -883,41 +846,41 @@ Expected:
 
 # Table: `tm_users`
 
-| Column    | Type    |
-| --------- | ------- |
-| id        | Integer |
-| username  | String  |
-| email     | String  |
-| role      | Enum    |
+| Column | Type |
+|---|---|
+| id | Integer |
+| username | String |
+| email | String |
+| role | Enum |
 | is_active | Boolean |
 
 ---
 
 # Table: `tm_tasks`
 
-| Column      | Type     |
-| ----------- | -------- |
-| id          | Integer  |
-| title       | String   |
-| description | Text     |
-| status      | Enum     |
-| assigned_to | Integer  |
-| created_at  | DateTime |
-| updated_at  | DateTime |
+| Column | Type |
+|---|---|
+| id | Integer |
+| title | String |
+| description | Text |
+| status | Enum |
+| assigned_to | Integer |
+| created_at | DateTime |
+| updated_at | DateTime |
 
 ---
 
 # Common Errors & Fixes
 
-| Error                              | Cause                        | Fix                             |
-| ---------------------------------- | ---------------------------- | ------------------------------- |
-| Connection refused                 | PostgreSQL/Redis not running | Start Docker containers         |
-| ForeignKeyViolationError           | User missing                 | Insert user first               |
-| Invalid status transition          | Invalid workflow             | Use allowed transitions         |
-| Redis connection error             | Redis down                   | Restart Redis container         |
-| another operation is in progress   | Async event loop misuse      | Use dedicated loop in Celery    |
-| Task already assigned              | Concurrent assignment        | Retry request                   |
-| Task already assigned by another request | Race condition handling | Request safely rejected         |
+| Error | Cause | Fix |
+|---|---|---|
+| Connection refused | PostgreSQL/Redis not running | Start Docker containers |
+| ForeignKeyViolationError | User missing | Insert user first |
+| Invalid status transition | Invalid workflow | Use allowed transitions |
+| Redis connection error | Redis down | Restart Redis container |
+| another operation is in progress | Async event loop misuse | Use dedicated loop in Celery |
+| Task already assigned | Concurrent assignment | Retry request |
+| Task already assigned by another request | Race condition handling | Request safely rejected |
 
 ---
 
@@ -967,18 +930,39 @@ docker compose down -v
 
 ---
 
+# Future Enhancements
+
+Potential future improvements:
+
+- JWT authentication
+- RBAC authorization
+- OpenTelemetry tracing
+- Prometheus metrics
+- Grafana dashboards
+- Flower worker monitoring
+- Distributed locking
+- API versioning
+- Kubernetes deployment
+- CI/CD pipelines
+- Dead letter queues
+- Kafka event streaming
+- Automated test suite
+
+---
+
 # Changelog
 
-| Date       | Author     | Change                                 |
-| ---------- | ---------- | -------------------------------------- |
-| 2026-05-21 | Arpit Garg | Initial CRUD implementation            |
-| 2026-05-22 | Arpit Garg | Added Redis caching                    |
-| 2026-05-22 | Arpit Garg | Added task state machine               |
-| 2026-05-23 | Arpit Garg | Added Celery integration               |
-| 2026-05-23 | Arpit Garg | Added async background processing      |
+| Date | Author | Change |
+|---|---|---|
+| 2026-05-21 | Arpit Garg | Initial CRUD implementation |
+| 2026-05-22 | Arpit Garg | Added Redis caching |
+| 2026-05-22 | Arpit Garg | Added task state machine |
+| 2026-05-23 | Arpit Garg | Added Celery integration |
+| 2026-05-23 | Arpit Garg | Added async background processing |
 | 2026-05-23 | Arpit Garg | Added production-ready worker handling |
-| 2026-05-23 | Arpit Garg | Added filtering and pagination         |
-| 2026-05-23 | Arpit Garg | Added bulk task operations             |
-| 2026-05-23 | Arpit Garg | Added partial failure handling         |
+| 2026-05-23 | Arpit Garg | Added filtering and pagination |
+| 2026-05-23 | Arpit Garg | Added bulk task operations |
+| 2026-05-23 | Arpit Garg | Added partial failure handling |
+| 2026-05-25 | Arpit Garg | Added architecture and workflow developer documentation |
 
 ---

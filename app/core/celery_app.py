@@ -1,6 +1,16 @@
 from celery import Celery
 from app.core.config import settings
 
+"""
+Celery application configuration.
+
+Defines:
+- Redis broker/backend
+- task routing
+- queue configuration
+- worker rate limits
+"""
+
 celery_app = Celery(
     "task_manager",
     broker=settings.REDIS_URL,

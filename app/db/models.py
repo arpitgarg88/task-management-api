@@ -13,6 +13,15 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
 
+"""
+SQLAlchemy ORM models for the task management system.
+
+Contains:
+- task entities
+- user entities
+- application enums
+"""
+
 
 class TaskStatus(str, enum.Enum):
     PENDING = "pending"
@@ -25,7 +34,9 @@ class UserRole(str, enum.Enum):
     USER = "user"
     MANAGER = "manager"
 
-
+"""
+Application user entity.
+"""
 class User(Base):
     __tablename__ = "tm_users"
 
@@ -37,7 +48,9 @@ class User(Base):
 
     assigned_tasks = relationship("Task", back_populates="assignee")
 
-
+"""
+Task entity representing assignable work items.
+"""
 class Task(Base):
     __tablename__ = "tm_tasks"
 

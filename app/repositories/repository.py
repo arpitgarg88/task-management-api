@@ -3,9 +3,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Task, TaskStatus, User
 
+"""
+Repository layer for database access.
+
+Encapsulates all ORM queries and persistence logic,
+keeping database operations isolated from business rules.
+"""
 
 class TaskRepository:
+    """
+    Handles all direct database operations.
 
+    Keeps SQLAlchemy queries isolated from business logic.
+    """
     async def create_task(self, session: AsyncSession, task: Task):
         session.add(task)
         await session.flush()
@@ -29,24 +39,17 @@ class TaskRepository:
         order: str = "desc",
     ):
         stmt = select(Task)
-
         if status:
             stmt = stmt.where(Task.status == status)
-
         if assigned_to:
             stmt = stmt.where(Task.assigned_to == assigned_to)
-
         sort_column = getattr(Task, sort_by)
-
         if order == "desc":
             stmt = stmt.order_by(sort_column.desc())
         else:
             stmt = stmt.order_by(sort_column.asc())
-
         stmt = stmt.offset(offset).limit(limit)
-
         result = await session.execute(stmt)
-
         return result.scalars().all()
 
     async def update_task(
@@ -74,9 +77,7 @@ class TaskRepository:
             .where(Task.id == task_id)
             .returning(Task.id)
         )
-
         result = await session.execute(stmt)
-
         return result.scalar_one_or_none()
 
     async def get_user(
@@ -87,7 +88,6 @@ class TaskRepository:
         result = await session.execute(
             select(User).where(User.id == user_id)
         )
-
         return result.scalar_one_or_none()
 
     async def assign_task_to_user(
@@ -106,6 +106,5 @@ class TaskRepository:
             .values(assigned_to=user_id)
             .returning(Task)
         )
-
         result = await session.execute(stmt)
         return result.scalar_one_or_none()

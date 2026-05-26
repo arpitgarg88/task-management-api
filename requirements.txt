@@ -10,8 +10,13 @@ alembic==1.18.4
 pydantic==2.13.4
 pydantic-settings==2.11.0
 
-redis==6.2.0
-
 python-dotenv==1.2.1
 
-celery==5.5.0
+redis==6.2.0
+celery==5.5.3
+
+pytest==8.4.0
+pytest-asyncio==1.1.0
+httpx==0.28.1
+fakeredis==2.31.0
+celery[testing]

@@ -147,7 +147,12 @@ class TaskService:
         Falls back to database on cache miss.
         """
         key = task_key(task_id)
-        cached = await get_cache(key, {"task_id": task_id})
+        cached = None
+        try:
+            cached = await get_cache(key, {"task_id": task_id})
+        except Exception as e:
+            logger.warning(f"cache get failed: {e}")
+
         if cached:
             return TaskResponse(**json.loads(cached))
 
@@ -157,11 +162,14 @@ class TaskService:
 
         response = to_response(task)
 
-        await set_cache(
-            key,
-            json.dumps(response.model_dump(mode="json")),
-            ttl=300,
-        )
+        try:
+            await set_cache(
+                key,
+                json.dumps(response.model_dump(mode="json")),
+                ttl=300,
+            )
+        except Exception as e:
+            logger.warning(f"cache set failed: {e}")
         return response
 
     @staticmethod
@@ -215,8 +223,12 @@ class TaskService:
             if old_user:
                 await delete_cache(tasks_user_key(old_user))
 
-            process_task_completion.delay(task.id)
-            logger.info(
+            if task.status == TaskStatus.COMPLETED:
+                try:
+                    process_task_completion.delay(task.id)
+                except Exception:
+                    pass
+                logger.info(
                 f"[TASK QUEUED] task_id={task.id}"
             )
             return to_response(updated_task)
@@ -323,11 +335,17 @@ class TaskService:
     ):
         """
         Creates multiple tasks with partial failure handling.
+        Each task is committed individually to avoid full rollback.
         """
         results = []
         for item in payload.tasks:
             try:
                 created = await TaskService.create(session, item)
+
+                # ensure persistence per item
+                await session.commit()
+                await session.refresh(created)
+
                 results.append(
                     BulkTaskCreateItemResponse(
                         success=True,
@@ -336,6 +354,8 @@ class TaskService:
                 )
 
             except Exception as exc:
+                await session.rollback()
+
                 results.append(
                     BulkTaskCreateItemResponse(
                         success=False,
@@ -351,8 +371,7 @@ class TaskService:
     ):
         """
         Updates status for multiple tasks independently.
-
-        Failures in one task do not interrupt remaining updates.
+        Failures in one task do not interrupt others.
         """
         results = []
         for item in payload.tasks:
@@ -360,10 +379,11 @@ class TaskService:
                 updated = await TaskService.update(
                     session=session,
                     task_id=item.task_id,
-                    payload=TaskUpdateRequest(
-                        status=item.status
-                    ),
+                    payload=TaskUpdateRequest(status=item.status),
                 )
+                await session.commit()
+                await session.refresh(updated)
+
                 results.append(
                     BulkStatusUpdateItemResponse(
                         task_id=item.task_id,
@@ -373,6 +393,8 @@ class TaskService:
                 )
 
             except Exception as exc:
+                await session.rollback()
+
                 results.append(
                     BulkStatusUpdateItemResponse(
                         task_id=item.task_id,

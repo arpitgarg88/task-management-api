@@ -2,7 +2,7 @@ import fakeredis
 import pytest
 import logging
 import os
-from datetime import datetime
+
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -16,10 +16,6 @@ from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-
-# -------------------------
-# LOGGING SETUP
-# -------------------------
 
 LOG_DIR = "logs"
 LOG_FILE = os.path.join(LOG_DIR, "pytest_structured.log")
@@ -39,19 +35,24 @@ if not logger.handlers:
     logger.addHandler(file_handler)
 
 
-# -------------------------
-# PYTEST HOOKS
-# -------------------------
-
 def pytest_sessionstart(session):
+    """
+    Log the start of the pytest session.
+    """
     logger.info("===== TEST SESSION STARTED =====")
 
 
 def pytest_sessionfinish(session, exitstatus):
+    """
+    Log the completion of the pytest session and exit status.
+    """
     logger.info(f"===== TEST SESSION FINISHED | exit={exitstatus} =====")
 
 
 def pytest_runtest_logreport(report):
+    """
+    Log the result of each executed test case.
+    """
     if report.when == "call":
         if report.passed:
             logger.info(f"PASSED: {report.nodeid}")
@@ -61,12 +62,11 @@ def pytest_runtest_logreport(report):
             logger.warning(f"SKIPPED: {report.nodeid}")
 
 
-# -------------------------
-# FIXTURES
-# -------------------------
-
 @pytest.fixture
 async def test_db_engine():
+    """
+    Create an in-memory SQLite test database engine.
+    """
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
     async with engine.begin() as conn:
@@ -82,6 +82,9 @@ async def test_db_engine():
 
 @pytest.fixture
 async def test_db_session(test_db_engine):
+    """
+    Provide an isolated async database session for tests.
+    """
     session_factory = async_sessionmaker(
         bind=test_db_engine,
         class_=AsyncSession,
@@ -94,6 +97,10 @@ async def test_db_session(test_db_engine):
 
 @pytest.fixture
 def client(test_db_session):
+    """
+    Create a FastAPI test client with overridden database and Redis dependencies.
+    """
+
     async def override_get_db():
         yield test_db_session
 
@@ -113,6 +120,9 @@ def client(test_db_session):
 
 @pytest.fixture
 def celery_worker():
+    """
+    Start an in-memory Celery worker for task execution during tests.
+    """
     from celery.contrib.testing.worker import start_worker
     from app.core.celery_app import celery_app
 

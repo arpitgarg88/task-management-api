@@ -1,0 +1,13 @@
+2026-05-27 09:52:36,479 | INFO | ===== TEST SESSION STARTED =====
+2026-05-27 09:52:36,721 | INFO | PASSED: tests/test_integration.py::test_cache_hit_miss_and_invalidation
+2026-05-27 09:52:36,744 | INFO | PASSED: tests/test_integration.py::test_redis_down_graceful_degradation
+2026-05-27 09:52:49,070 | INFO | PASSED: tests/test_integration.py::test_valid_status_transitions
+2026-05-27 09:52:57,246 | INFO | PASSED: tests/test_integration.py::test_invalid_status_transitions
+2026-05-27 09:53:08,721 | INFO | PASSED: tests/test_integration.py::test_celery_completion_workflow
+2026-05-27 09:53:11,534 | INFO | PASSED: tests/test_integration.py::test_task_assignment
+2026-05-27 09:53:11,562 | INFO | PASSED: tests/test_integration.py::test_list_tasks_with_filters_and_pagination
+2026-05-27 09:53:11,601 | INFO | PASSED: tests/test_integration.py::test_bulk_create
+2026-05-27 09:53:31,943 | INFO | PASSED: tests/test_integration.py::test_bulk_status_update
+2026-05-27 09:53:31,964 | INFO | PASSED: tests/test_integration.py::test_concurrent_assignment_protection
+2026-05-27 09:53:51,297 | INFO | PASSED: tests/test_integration.py::test_celery_idempotency_and_retries
+2026-05-27 09:53:54,016 | INFO | ===== TEST SESSION FINISHED | exit=0 =====

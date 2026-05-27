@@ -1,6 +1,8 @@
 import json
 import pytest
 from unittest.mock import AsyncMock
+from unittest.mock import patch
+from app.tasks import process_task_completion
 
 
 @pytest.mark.asyncio
@@ -126,18 +128,32 @@ async def test_invalid_status_transitions(client):
 @pytest.mark.asyncio
 async def test_celery_completion_workflow(client, celery_worker):
     """
-    Verify Celery-driven task completion workflow executes successfully.
+    Verify Celery task is triggered when a task is completed.
     """
     resp = client.post("/tasks", json={"title": "Celery Test"})
     assert resp.status_code == 201
 
     task_id = resp.json()["id"]
 
-    client.put(f"/tasks/{task_id}", json={"status": "in_progress"})
-
-    resp = client.put(f"/tasks/{task_id}", json={"status": "completed"})
+    resp = client.put(
+        f"/tasks/{task_id}",
+        json={"status": "in_progress"},
+    )
     assert resp.status_code == 200
-    assert resp.json()["status"] == "completed"
+
+    with patch(
+        "app.tasks.process_task_completion.delay"
+    ) as mock_delay:
+
+        resp = client.put(
+            f"/tasks/{task_id}",
+            json={"status": "completed"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "completed"
+
+        mock_delay.assert_called_once_with(task_id)
 
 
 @pytest.mark.asyncio
@@ -274,17 +290,43 @@ async def test_concurrent_assignment_protection(client):
 @pytest.mark.asyncio
 async def test_celery_idempotency_and_retries(client, celery_worker):
     """
-    Verify Celery task execution remains idempotent across retries.
+    Verify Celery retries are triggered safely and
+    task state remains consistent.
     """
-    resp = client.post("/tasks", json={"title": "Idempotency Test"})
+
+    resp = client.post(
+        "/tasks",
+        json={"title": "Idempotency Test"},
+    )
     assert resp.status_code == 201
 
     task_id = resp.json()["id"]
 
-    client.put(f"/tasks/{task_id}", json={"status": "in_progress"})
+    client.put(
+        f"/tasks/{task_id}",
+        json={"status": "in_progress"},
+    )
 
-    resp = client.put(f"/tasks/{task_id}", json={"status": "completed"})
+    resp = client.put(
+        f"/tasks/{task_id}",
+        json={"status": "completed"},
+    )
+
     assert resp.status_code == 200
 
     resp_check = client.get(f"/tasks/{task_id}")
+
+    assert resp_check.status_code == 200
     assert resp_check.json()["status"] == "completed"
+
+    with patch.object(process_task_completion, "retry") as mock_retry:
+
+        with patch(
+            "time.sleep",
+            side_effect=Exception("Transient failure"),
+        ):
+
+            with pytest.raises(Exception):
+                process_task_completion.run(task_id)
+
+        mock_retry.assert_called_once()
